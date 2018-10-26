@@ -89,12 +89,21 @@ library(plotly)
 Sys.setlocale(locale="en_us.UTF-8")
 ```
 
-```{r Loading list of names + genders}
+```{r Downloading list of names and genders, eval=FALSE}
 # Downloading a dataset giving, for each name, the gender
 gender_by_name <- read.csv("https://query.data.world/s/2laxunthmvqedzzkelp4wdgx5xulum", 
                            header = TRUE,
                            stringsAsFactors = FALSE)
 # Source: https://data.world/howarder/gender-by-name
+
+gender_by_name %>% write.csv("datasets/gender_by_name.csv")
+```
+
+```{r Loading list of names and genders}
+# Loading datasets with names and genders
+gender_by_name <- read.csv("datasets/gender_by_name.csv") %>% 
+  select(-X)
+
 
 # Adding some missing names and genders
 name_to_add <- data.frame(rbind(c("Aurelien", "M", 1), 
@@ -174,7 +183,7 @@ names_lemonde_1 <- list_url_lemonde_1 %>%
          SIMPLIFY = "array") %>% 
   unlist(use.names = FALSE)
 
-names_lemonde_1 %>% write.csv('names_lemonde_1.csv')
+names_lemonde_1 %>% write.csv('datasets/names_lemonde_1.csv')
 
 
 names_lemonde_2 <- list_url_lemonde_2 %>% 
@@ -184,7 +193,7 @@ names_lemonde_2 <- list_url_lemonde_2 %>%
          SIMPLIFY = "array") %>% 
   unlist(use.names = FALSE)
 
-names_lemonde_2 %>% write.csv('names_lemonde_2.csv')
+names_lemonde_2 %>% write.csv('datasets/names_lemonde_2.csv')
 
 
 names_lemonde_3 <- list_url_lemonde_3 %>% 
@@ -194,18 +203,18 @@ names_lemonde_3 <- list_url_lemonde_3 %>%
          SIMPLIFY = "array") %>% 
   unlist(use.names = FALSE)
 
-names_lemonde_3 %>% write.csv('names_lemonde_3.csv')
+names_lemonde_3 %>% write.csv('datasets/names_lemonde_3.csv')
 ```
 
 ```{r Cleaning Le Monde}
 # Loading the list of names
-names_lemonde <- read.csv('names_lemonde_1.csv', 
+names_lemonde <- read.csv('datasets/names_lemonde_1.csv', 
                           col.names = c("x", "raw_names"), 
                           colClasses = c("character")) %>% 
-  rbind(read.csv('names_lemonde_2.csv', 
+  rbind(read.csv('datasets/names_lemonde_2.csv', 
                           col.names = c("x", "raw_names"), 
                           colClasses = c("character"))) %>% 
-  rbind(read.csv('names_lemonde_3.csv', 
+  rbind(read.csv('datasets/names_lemonde_3.csv', 
                           col.names = c("x", "raw_names"), 
                           colClasses = c("character"))) %>% 
   select(-x)
@@ -250,11 +259,11 @@ names_humanite <- list_url_humanite %>%
          SIMPLIFY = "array") %>% 
   unlist(use.names = FALSE)
 
-names_humanite %>% write.csv('names_humanite.csv')
+names_humanite %>% write.csv('datasets/names_humanite.csv')
 ```
 
 ```{r Cleaning Lhumanité}
-names_humanite <- read.csv('names_humanite.csv', col.names = c("x", "raw_names")) %>% 
+names_humanite <- read.csv('datasets/names_humanite.csv', col.names = c("x", "raw_names")) %>% 
   select(-x)
 
 # Filling methodology_articles df for L'Humanité
@@ -347,11 +356,11 @@ names_lopinion <- list_url_lopinion %>%
          SIMPLIFY = "array") %>% 
   unlist(use.names = FALSE)
 
-names_lopinion %>% write.csv('names_lopinion.csv')
+names_lopinion %>% write.csv('datasets/names_lopinion.csv')
 ```
 
 ```{r Cleaning LOpinion}
-names_lopinion <- read.csv('names_lopinion.csv', col.names = c("x", "raw_names")) %>% 
+names_lopinion <- read.csv('datasets/names_lopinion.csv', col.names = c("x", "raw_names")) %>% 
   select(-x)
 
 # Filling methodology_articles df for L'Humanité
