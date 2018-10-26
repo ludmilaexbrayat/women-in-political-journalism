@@ -1,0 +1,711 @@
+---
+title: "Women and political journalism"
+author: "Ludmila Exbrayat"
+date: "10/13/2018"
+output: html_document
+---
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<br>
+<br>
+
+## Introduction
+<br>
+<span style="color:#355c5e">**The Bechdel test aims at measuring the representation of women in movies**</span>.
+<br>
+When it was created, the rule was simple: a movie would pass the test if it had at least two named female characters. But recently, fivethirtyeight.com imagined new rules (e.g. "_every department has two or more women_").<br>
+<br>
+
+<span style="color:#355c5e">**It is my turn now to imagine a rule assessing the representation of women in a specific industry**</span>. 
+I've thus decided to work on political journalism in France, using the following rule: **<span style="color:#6BB7B9">"At least 50% of the articles on politics were written by a woman"</span>**.<br>
+<br>
+
+<span style="color:#355c5e">**In this analysis, three French newspapers will be scrutinized under this rule: Le Monde, L'Humanité, and L'Opinion**</span>. Who wins? Who loses? Let's find this out!<br>
+<br>
+<br>
+<br>
+
+## Data preparation {.tabset .tabset-fade}
+<br>
+
+### Methodology
+<br>
+<span style="color:#355c5e">**How did I collect the names of the political journalists?**</span><br>
+I scrapped (i.e. extracted data from webpages) the websites of the newspapers, using the library rvest.
+<br>
+<br>
+
+<span style="color:#355c5e">**Why did I pick Le Monde, L'Humanité and L'Opinion?**</span><br>
+My criteria were the following:
+
+* The newspaper is French
+* The newspaper has a Political section
+* The newspaper displays the names of the journalists in the feed
+<br>
+
+I thus considered analyzing the following newspapers, but didn't pick them for multiple reasons:
+
+* **Les Echos**: rarely displays the names of the journalists
+* **Le Parisien**: impossible to scrap (error 404)
+* **Le Figaro**: does not display the names of the journalists in the feed
+* **Libération**: no clear political section
+* **Slate.fr**: too complicated to scrap (requires to click a button "More articles" at the end of the page to load more articles)
+<br>
+<br>
+
+<span style="color:#355c5e">**How did I determine the gender of the journalists?**</span><br>
+I used the dataset "<a href= "https://data.world/howarder/gender-by-name target="_blank" >Gender by Name</a>" from data.world (credits to Derek Howard) that gives the gender of every name.
+<br>
+<br>
+
+<span style="color:#355c5e">**How many articles did I analyze?**</span><br>
+I analyzed **all the articles that were published between September 2017 and October 2018** in the Political sections of the websites. This led me to the following numbers of articles:
+
+* Le Monde: 4,116 articles were scrapped, 4,116 were used in the analysis
+* L'Humanité: 1,608 articles were scrapped, 1,576 were used in the analysis
+* L'Opinion: 2,689 articles were scrapped, 2,049 were used in the analysis
+<br>
+
+Note that the names of the journalists were not always clear (for instance, some articles were signed "L'Opinion Vidéo"). These articles were thus removed from the analysis, hence the difference between the number of articles scrapped and analyzed.<br>
+
+### Preparing scrapping
+
+```{r Loading packages, message=FALSE, warning=FALSE}
+library(rvest)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(gsubfn)
+library(knitr)
+library(kableExtra)
+library(plotly)
+Sys.setlocale(locale="en_us.UTF-8")
+```
+
+```{r Loading list of names + genders}
+# Downloading a dataset giving, for each name, the gender
+gender_by_name <- read.csv("https://query.data.world/s/2laxunthmvqedzzkelp4wdgx5xulum", 
+                           header = TRUE,
+                           stringsAsFactors = FALSE)
+# Source: https://data.world/howarder/gender-by-name
+
+# Adding some missing names and genders
+name_to_add <- data.frame(rbind(c("Aurelien", "M", 1), 
+                                c("Francette", "F", 1),
+                                c("Nehla", "F", 1),
+                                c("Pierric", "M", 1),
+                                c("Violaine", "F", 1),
+                                c("Aurane", "F", 1),
+                                c("Brune", "F", 1),
+                                c("Geoffroy", "M", 1),
+                                c("Ivanne", "F", 1),
+                                c("Mahasti", "F", 1),
+                                c("Pieyre", "M", 1),
+                                c("Flavie", "F", 1),
+                                c("Gaidz", "M", 1),
+                                c("Rafaele", "F", 1),
+                                c("Soazig", "F", 1)
+                                ))
+
+colnames(name_to_add) <- c("name", "gender", "probability")
+
+gender_by_name <- rbind(gender_by_name, name_to_add)
+```
+
+```{r Defining functions}
+# Creating a function that extracts the journalists' names from a specific webpage
+scrap_names <- function(url, xpath) {
+  html <- read_html(url)
+  Sys.sleep(sample(10, 1) * 0.1) # Let's try to look more human: we set some random waiting time between each url
+  return(html %>% 
+           html_nodes(xpath = xpath) %>% 
+           html_text())
+}
+
+# Creating a function that removes the accents
+unwanted_array <- list('Š'='S', 'š'='s', 'Ž'='Z', 'ž'='z', 'À'='A', 'Á'='A', 'Â'='A', 'Ã'='A', 'Ä'='A','Å'='A', 'Æ'='A', 'Ç'='C', 'È'='E', 'É'='E','Ê'='E', 'Ë'='E', 'Ì'='I', 'Í'='I', 'Î'='I', 'Ï'='I', 'Ñ'='N', 'Ò'='O', 'Ó'='O', 'Ô'='O', 'Õ'='O', 'Ö'='O', 'Ø'='O', 'Ù'='U', 'Ú'='U', 'Û'='U', 'Ü'='U', 'Ý'='Y', 'Þ'='B', 'ß'='Ss', 'à'='a', 'á'='a', 'â'='a', 'ã'='a', 'ä'='a', 'å'='a', 'æ'='a', 'ç'='c', 'è'='e', 'é'='e', 'ê'='e', 'ë'='e', 'ì'='i', 'í'='i', 'î'='i', 'ï'='i', 'ð'='o', 'ñ'='n', 'ò'='o', 'ó'='o', 'ô'='o', 'õ'='o', 'ö'='o', 'ø'='o', 'ù'='u', 'ú'='u', 'û'='u', 'ý'='y', 'ý'='y', 'þ'='b', 'ÿ'='y' )
+
+remove_accents <- function(name) {
+  gsubfn(paste(names(unwanted_array),collapse='|'), unwanted_array, name)
+}
+
+# Creating a function that extracts the first name (or the first part of the first name if is a composed name)
+extract_first_name <- function(name) {
+  first_name = remove_accents(substr(name, 1, regexpr(" ", name)-1))
+  first_name = gsub(" ", "", case_when(regexpr("-", first_name) != -1 ~ substr(first_name, 1, regexpr("-", first_name)-1),
+                                       TRUE ~ first_name)) # if it is a composed name, let's just keep the first part
+  return(first_name)
+}
+```
+
+```{r Defining what to scrap}
+# Defining URLs to scrap and specifying where to find the names of the journalists in these pages
+base_url_lemonde <- 'https://www.lemonde.fr/politique/'
+## I need to break down Le Monde's URLs into three vectors, because Le Monde seems to limit scrappings -> if too many pages, it generates an error
+list_url_lemonde_1 <- paste0(base_url_lemonde, c(1:100), ".html")
+list_url_lemonde_2 <- paste0(base_url_lemonde, c(101:200), ".html")
+list_url_lemonde_3 <- paste0(base_url_lemonde, c(201:300), ".html") 
+xpath_lemonde <- './/*[@class="auteur"]'
+
+base_url_humanite <- 'https://www.humanite.fr/politique?page='
+list_url_humanite <- paste0(base_url_humanite, c(1:200))
+xpath_humanite <- './/*[@class="field field-name-field-news-auteur field-type-node-reference field-label-hidden"]'
+
+base_urL_lopinion <- 'https://www.lopinion.fr/edition/politique/index/page/'
+list_url_lopinion <- paste0(base_urL_lopinion, c(1:90), "/0")
+xpath_lopinion <- './/*[@class="article-snippet_author"]'
+```
+
+### Scrapping Le Monde
+
+```{r Scrapping Le Monde, eval=FALSE}
+# Extracting the names from all the pages
+names_lemonde_1 <- list_url_lemonde_1 %>% 
+  mapply(scrap_names, 
+         ., 
+         MoreArgs = list(xpath_lemonde),
+         SIMPLIFY = "array") %>% 
+  unlist(use.names = FALSE)
+
+names_lemonde_1 %>% write.csv('names_lemonde_1.csv')
+
+
+names_lemonde_2 <- list_url_lemonde_2 %>% 
+  mapply(scrap_names, 
+         ., 
+         MoreArgs = list(xpath_lemonde),
+         SIMPLIFY = "array") %>% 
+  unlist(use.names = FALSE)
+
+names_lemonde_2 %>% write.csv('names_lemonde_2.csv')
+
+
+names_lemonde_3 <- list_url_lemonde_3 %>% 
+  mapply(scrap_names, 
+         ., 
+         MoreArgs = list(xpath_lemonde),
+         SIMPLIFY = "array") %>% 
+  unlist(use.names = FALSE)
+
+names_lemonde_3 %>% write.csv('names_lemonde_3.csv')
+```
+
+```{r Cleaning Le Monde}
+# Loading the list of names
+names_lemonde <- read.csv('names_lemonde_1.csv', 
+                          col.names = c("x", "raw_names"), 
+                          colClasses = c("character")) %>% 
+  rbind(read.csv('names_lemonde_2.csv', 
+                          col.names = c("x", "raw_names"), 
+                          colClasses = c("character"))) %>% 
+  rbind(read.csv('names_lemonde_3.csv', 
+                          col.names = c("x", "raw_names"), 
+                          colClasses = c("character"))) %>% 
+  select(-x)
+
+# Computing the number of articles scrapped for the "Methodology section"
+methodology_articles <- data.frame(newspaper = "Le Monde",
+                                   n_scrapped_articles = as.integer(count(names_lemonde)),
+                                   stringsAsFactors=FALSE)
+
+# Computing the number of articles per journalist, and isolating their first names
+names_lemonde <- names_lemonde %>%
+  group_by(raw_names) %>% 
+  summarize(n_articles = n()) %>%
+  ungroup() %>% 
+  mutate(first_names = extract_first_name(raw_names),
+         id = row_number())
+
+# Storing the results in a data frame
+df_lemonde <- names_lemonde %>% 
+  merge(gender_by_name, 
+        by.x = "first_names", 
+        by.y = "name", 
+        all.x = TRUE)
+
+df_lemonde <- df_lemonde[c(4,2,1,5,6,3)]
+
+df_lemonde %>% filter(is.na(gender))
+
+# Adding the number of articles analyzed to the methodology_articles df
+methodology_articles <- methodology_articles %>% 
+  mutate(n_analyzed_articles = df_lemonde$n_articles %>% sum())
+```
+
+
+### Scrapping L'humanité
+```{r Scraping Lhumanité, eval=FALSE}
+# Extracting the names from all the pages
+names_humanite <- list_url_humanite %>%
+  mapply(scrap_names, 
+         ., 
+         MoreArgs = list(xpath_humanite),
+         SIMPLIFY = "array") %>% 
+  unlist(use.names = FALSE)
+
+names_humanite %>% write.csv('names_humanite.csv')
+```
+
+```{r Cleaning Lhumanité}
+names_humanite <- read.csv('names_humanite.csv', col.names = c("x", "raw_names")) %>% 
+  select(-x)
+
+# Filling methodology_articles df for L'Humanité
+methodology_articles <- methodology_articles %>% 
+  rbind(c("L'Humanité", nrow(names_humanite),0))
+
+# Data Cleaning
+##  1. Some rows contain several names (separated by a comma, "et", or "avec") -> Let's isolate them and extract all the names
+names_humanite <- names_humanite %>%
+  filter(!(rownames(.) %in% grep(",", raw_names))) %>%  # Rows with a "," represent a small nb of names (4 rows), but too much work -> let's remove them
+  mutate(name_1 = case_when(rownames(.) %in% grep(" et ", raw_names) ~ substr(raw_names, 1, regexpr(" et ", raw_names)-1),
+                            rownames(.) %in% grep(" avec ", raw_names) ~ substr(raw_names, 1, regexpr(" avec ", raw_names)-1),
+                            TRUE ~ as.character(raw_names)),
+         name_2 = case_when(rownames(.) %in% grep(" et ", raw_names) ~ substr(raw_names, regexpr(" et ", raw_names)+4, 100),
+                            rownames(.) %in% grep(" avec ", raw_names) ~ substr(raw_names, regexpr(" avec ", raw_names)+6, 100)))
+
+### We still have some rows with multiple names. Let's quickly fix it:
+names_humanite <- names_humanite %>% 
+  mutate(
+    name_3 = case_when(
+      rownames(.) %in% grep("avec", name_1) ~ case_when(
+        rownames(.) %in% grep("avec ", name_1) ~ substr(name_1, regexpr("avec ", name_1)+5, 100))),
+    
+    name_1 = case_when(
+      rownames(.) %in% grep("avec", name_1) ~ case_when(
+        rownames(.) %in% grep("avec ", name_1) ~ substr(name_1, 1, regexpr("avec ", name_1)-1)),
+      TRUE ~ name_1))
+
+
+##  2. Now, let's create a new dataframe with the list of names from the 3 columns.
+list_names_1 <- names_humanite %>% 
+  filter(regexpr("\\.", name_1) == -1) %>% # Removing abbreviations (e.g. "G.M.")
+  select(name_1) %>% 
+  as.list()
+
+list_names_2 <- names_humanite %>% 
+  filter(regexpr("\\.", name_2) == -1) %>%# Removing abbreviations (e.g. "G.M.")
+  select(name_2) %>%
+  filter(is.na(name_2) == FALSE)
+
+list_names_3 <- names_humanite %>% 
+  filter(regexpr("\\.", name_3) == -1) %>% # Removing abbreviations (e.g. "G.M.")
+  select(name_3) %>% 
+  filter(is.na(name_3) == FALSE)
+
+list_names <- list_names_1 %>%
+  append(list_names_2) %>% 
+  append(list_names_3) %>% 
+  unlist()
+
+df_humanite <- data.frame(raw_names = list_names, row.names = c()) # Tadam!
+
+
+# Data preparation
+## 1. Computing the number of articles per journalist, and isolating their first names
+df_humanite <- df_humanite %>%
+  group_by(raw_names) %>% 
+  summarize(n_articles = n()) %>%
+  ungroup() %>% 
+  mutate(first_names = extract_first_name(raw_names),
+         id = row_number())
+
+## 2. Storing the results in a dataframe
+df_humanite <- df_humanite %>% 
+  merge(gender_by_name, 
+        by.x = "first_names", 
+        by.y = "name", 
+        all.x = TRUE) %>% 
+  filter(!(is.na(gender)))
+
+df_humanite <- df_humanite[c(4,2,1,5,6,3)]
+
+# Note that there are some mispellings: Laurène Bureau became Lauren bureau, Ludovic Finez became ludo finez, etc.
+
+# Adding the number of articles to the methodology_articles df
+methodology_articles <- methodology_articles %>% 
+  mutate(n_analyzed_articles = case_when(newspaper == "L'Humanité" ~ sum(df_humanite$n_articles),
+                                         TRUE ~ as.integer(n_analyzed_articles)))
+```
+
+
+### Scrapping L'Opinion
+
+```{r Scraping LOpinion, eval=FALSE}
+# Extracting the names from all the pages
+names_lopinion <- list_url_lopinion %>%
+  mapply(scrap_names, 
+         ., 
+         MoreArgs = list(xpath_lopinion),
+         SIMPLIFY = "array") %>% 
+  unlist(use.names = FALSE)
+
+names_lopinion %>% write.csv('names_lopinion.csv')
+```
+
+```{r Cleaning LOpinion}
+names_lopinion <- read.csv('names_lopinion.csv', col.names = c("x", "raw_names")) %>% 
+  select(-x)
+
+# Filling methodology_articles df for L'Humanité
+methodology_articles <- methodology_articles %>% 
+  rbind(c("L'Opinion", nrow(names_lopinion),0))
+
+# Data Cleaning
+##  1. Some rows contain several names (separated by a comma, "et", or "avec") -> Let's isolate them and extract all the names
+names_lopinion <- names_lopinion %>%
+  filter(!(rownames(.) %in% grep(",", raw_names))) %>%  # Rows with a "," represent a small nb of names (8 rows), but too much work -> let's remove them
+  mutate(name_1 = case_when(rownames(.) %in% grep(" et ", raw_names) ~ substr(raw_names, 1, regexpr(" et ", raw_names)-1),
+                            TRUE ~ as.character(raw_names)),
+         name_2 = case_when(rownames(.) %in% grep(" et ", raw_names) ~ substr(raw_names, regexpr(" et ", raw_names)+4, 100)))
+
+
+##  2. Now, let's create a new dataframe with the list of names from the 3 columns.
+list_names_1 <- names_lopinion %>% 
+  filter(regexpr("\\.", name_1) == -1) %>% # Removing abbreviations (e.g. "G.M.")
+  select(name_1) %>% 
+  as.list()
+
+list_names_2 <- names_lopinion %>% 
+  filter(regexpr("\\.", name_2) == -1) %>% # Removing abbreviations (e.g. "G.M.")
+  select(name_2) %>%
+  filter(is.na(name_2) == FALSE)
+
+list_names <- list_names_1 %>%
+  append(list_names_2) %>% 
+  unlist()
+
+df_lopinion <- data.frame(raw_names = list_names, row.names = c()) # Tadam!
+
+# Data prepration
+## 1. Computing the number of articles per journalist, and isolating their first names
+df_lopinion <- df_lopinion %>%
+  group_by(raw_names) %>% 
+  summarize(n_articles = n()) %>%
+  ungroup() %>% 
+  mutate(first_names = extract_first_name(raw_names),
+         id = row_number())
+
+## 2. Let's now add the gender
+df_lopinion <- df_lopinion %>% 
+  merge(gender_by_name, 
+        by.x = "first_names", 
+        by.y = "name", 
+        all.x = TRUE)
+
+df_lopinion <- df_lopinion %>% 
+  filter(!(is.na(gender)))
+
+df_lopinion <- df_lopinion[c(4,2,1,5,6,3)]
+
+# Adding the number of articles to the methodology_articles df
+methodology_articles <- methodology_articles %>% 
+  mutate(n_analyzed_articles = case_when(newspaper == "L'Opinion" ~ sum(df_lopinion$n_articles),
+                                         TRUE ~ as.integer(n_analyzed_articles)))
+```
+
+### Analyzing data
+
+```{r}
+# 1. Computing the share of articles written by males vs females
+s_articles_by_gender <- df_lopinion %>% 
+  group_by(gender) %>% 
+  summarize(n_articles_lopinion = sum(n_articles)) %>% 
+  merge(df_humanite %>% 
+          group_by(gender) %>% 
+          summarize(n_articles_lhumanite = sum(n_articles)),
+        by = "gender") %>% 
+  merge(df_lemonde %>% 
+          group_by(gender) %>% 
+          summarize(n_articles_lemonde = sum(n_articles)),
+        by = "gender")
+
+s_articles_by_gender <- s_articles_by_gender %>% 
+  mutate("# articles (L'Opinion)" = n_articles_lopinion,
+         "% articles (L'Opinion)" = round(n_articles_lopinion / sum(n_articles_lopinion), 2),
+         "# articles (L'Humanité)" = n_articles_lhumanite,
+         "% articles (L'Humanité)" = round(n_articles_lhumanite / sum(n_articles_lhumanite),2),
+         "# articles (Le Monde)" = n_articles_lemonde,
+         "% articles (Le Monde)" = round(n_articles_lemonde / sum(n_articles_lemonde), 2)
+         ) %>% 
+  select(-n_articles_lopinion, -n_articles_lhumanite, -n_articles_lemonde)
+
+# 2. Computing the share of female vs male journalists
+s_journalists_by_gender <- df_lopinion %>% 
+  group_by(gender) %>% 
+  summarize(n_journalists_lopinion = n_distinct(id)) %>% 
+  merge(df_humanite %>% 
+          group_by(gender) %>% 
+          summarize(n_journalists_lhumanite = n_distinct(id)),
+        by = "gender") %>% 
+  merge(df_lemonde %>% 
+          group_by(gender) %>% 
+          summarize(n_journalists_lemonde = n_distinct(id)))
+
+s_journalists_by_gender <- s_journalists_by_gender %>% 
+  mutate("# journalists (L'Opinion)" = n_journalists_lopinion,
+         "% journalists (L'Opinion)" = round(n_journalists_lopinion / sum(n_journalists_lopinion), 2),
+         "# journalists (L'Humanité)" = n_journalists_lhumanite,
+         "% journalists (L'Humanité)" =  round(n_journalists_lhumanite / sum(n_journalists_lhumanite), 2),
+         "# journalists (Le Monde)" = n_journalists_lemonde,
+         "% journalists (Le Monde)" = round(n_journalists_lemonde / sum(n_journalists_lemonde), 2)) %>% 
+  select(-n_journalists_lopinion, -n_journalists_lhumanite, -n_journalists_lemonde)
+# VERY SMALL NUMBERS -> ARE THEY CORRECT?
+
+# 3. Merging these two results
+genders_in_journalism <- merge(s_journalists_by_gender, s_articles_by_gender, by = "gender")
+
+#-> How can you explain that 33% of the journalists are women, and 56% of the article were written by females? Is it due to a few female journalists, or a real trend?
+```
+
+<br>
+<br>
+<br>
+<br>
+<br>
+
+## Findings
+
+<br>
+
+<font size="4">**<u>Rule #1</u>: <span style="color:#355c5e;">"50% of the political articles were written by women"</span>**</font>
+
+```{r Plotting Rule 1, echo=FALSE, message=FALSE, warning=FALSE}
+bubbles_1 <- data.frame("newspaper" = c("L'Opinion", "L'Humanité", "Le Monde"), 
+                      "succeeded" = c(10, 1, 4), 
+                      "y_value" = c(10, 10, 10), 
+                      "opacity" = c(1, 0.3, 0.3), 
+                      "color" = c('rgb(107,183,185)','rgb(53,92,94)','rgb(53,92,94)'))
+
+
+bubbles_1 %>% plot_ly(x = ~succeeded, y = ~y_value, text = ~newspaper, type = 'scatter', mode = 'markers',
+        marker = list(size = 120, color = ~color,line = list(color = 'rgb(53,92,94)',width = 2))) %>%
+  
+  layout(xaxis = list(showgrid = FALSE, showline = FALSE,  zeroline = FALSE, showticklabels = FALSE, title = ""),
+         yaxis = list(showgrid = FALSE, showline = FALSE,  zeroline = FALSE, showticklabels = FALSE, title = "",range = c(9.5, 10.5)))%>% 
+  
+  add_annotations(
+    x= 2.5,
+    y= 10.2,
+    xref = "x",
+    yref = "y",
+    text = "<b>2 failed the test</b>",
+    showarrow = F) %>% 
+  
+  add_annotations(
+    x= 10,
+    y= 10.2,
+    xref = "x",
+    yref = "y",
+    text = "<b>1 passed the test</b>",
+    showarrow = F) %>% 
+  
+  add_annotations(
+    x= 2,
+    y= 10.45,
+    xref = "x",
+    yref = "y",
+    text = "<b>🖱️Hover to find out which newspaper passed the test</b>",
+    showarrow = F) %>% 
+  
+  add_trace(
+    text = ~newspaper,
+    hoverinfo = 'text',
+    showlegend = F)
+```
+
+<span style="color:#355c5e;">**Only one out of the three newspapers - L'Opinion - passes the test**</span>: 56% of their political articles were written by women (that is 1,139 articles out of 2,049). As for the two other newspapers, <span style="color:#355c5e;">**Le Monde almost passes the test**</span> (48% of articles written by women), but <span style="color:#355c5e;">**L'Humanité is further from parity**</span>, with not even a third of the articles written by women (31%).
+
+<br>
+<br>
+
+```{r Displaying data Rule 1, echo=FALSE}
+s_articles_by_gender %>% 
+  mutate(`% articles (L'Opinion)` = paste0(round(`% articles (L'Opinion)`*100,0),"%"),
+         `% articles (L'Humanité)` = paste0(round(`% articles (L'Humanité)`*100,0), "%"),
+         `% articles (Le Monde)` = paste0(round(`% articles (Le Monde)`*100,0), "%")) %>% 
+  kable(align = "r") %>%
+  kable_styling(bootstrap_options = "hover",
+                full_width = F) %>% 
+  column_spec(2:7, width_max = "3em") %>%
+  column_spec(as.integer(c(5,7)), color = "rgb(53,92,94)", bold = TRUE) %>% 
+  column_spec(as.integer(c(3)), color = "rgb(107,183,185)", bold = TRUE)
+```
+
+<br>
+<br>
+
+If these first results give us an idea of the share of _articles_ written by female journalists, it doesn't tell us if women represent 50% of the _journalists_. Let's use another rule to assess this.
+
+<br>
+<br>
+<br>
+<br>
+<br>
+
+<font size="4">**<u>Rule #2</u>: <span style="color:#355c5e;">"50% of the political journalists are women"</span>**</font>
+
+```{r Plotting Rule 2, echo=FALSE, message=FALSE, warning=FALSE}
+bubbles_2 <- data.frame("newspaper" = c("L'Opinion", "L'Humanité", "Le Monde"), 
+                        "succeeded" = c(4, 1, 10), 
+                        "y_value" = c(10, 10, 10), 
+                        "opacity" = c(0.3, 0.3, 1), 
+                        "color" = c('rgb(53,92,94)','rgb(53,92,94)','rgb(107,183,185)'))
+
+
+bubbles_2 %>% plot_ly(x = ~succeeded, y = ~y_value, text = ~newspaper, type = 'scatter', mode = 'markers',
+        marker = list(size = 120, color = ~color,line = list(color = 'rgb(53,92,94)',width = 2))) %>%
+  
+  layout(xaxis = list(showgrid = FALSE, showline = FALSE,  zeroline = FALSE, showticklabels = FALSE, title = ""),
+         yaxis = list(showgrid = FALSE, showline = FALSE,  zeroline = FALSE, showticklabels = FALSE, title = "",range = c(9.5, 10.5)))%>% 
+  
+  add_annotations(
+    x= 2.5,
+    y= 10.2,
+    xref = "x",
+    yref = "y",
+    text = "<b>2 failed the test</b>",
+    showarrow = F) %>% 
+  
+  add_annotations(
+    x= 10,
+    y= 10.2,
+    xref = "x",
+    yref = "y",
+    text = "<b>1 passed the test</b>",
+    showarrow = F) %>% 
+  
+  add_annotations(
+    x= 2,
+    y= 10.45,
+    xref = "x",
+    yref = "y",
+    text = "<b>🖱️Hover to find out which newspaper passed the test</b>",
+    showarrow = F) %>% 
+  
+  add_trace(
+    text = ~newspaper,
+    hoverinfo = 'text',
+    showlegend = F)
+```
+
+
+```{r Displaying details Rule 2, echo=FALSE, message=FALSE, warning=FALSE}
+s_journalists_by_gender %>% 
+  mutate(`% journalists (L'Opinion)` = paste0(round(`% journalists (L'Opinion)`*100,0),"%"),
+         `% journalists (L'Humanité)` = paste0(round(`% journalists (L'Humanité)`*100,0), "%"),
+         `% journalists (Le Monde)` = paste0(round(`% journalists (Le Monde)`*100,0), "%")) %>% 
+  kable(align = "r") %>% 
+  kable_styling(bootstrap_options = "hover",
+                full_width = F) %>% 
+  column_spec(2:7, width_max = "3em") %>%
+  column_spec(as.integer(c(3,5)), color = "rgb(53,92,94)", bold = TRUE) %>% 
+  column_spec(as.integer(c(7)), color = "rgb(107,183,185)", bold = TRUE)
+```
+
+That's a surprise: <span style="color:#355c5e;">**L'Opinion passed the first test, but failed the second one, when Le Monde failed the first one, and succeeded in the second one**</span>. <br>
+<br>
+
+```{r Understanding difference of results between rules, echo=FALSE}
+genders_in_journalism %>% 
+  mutate("L'Opinion" = round(`# articles (L'Opinion)` / `# journalists (L'Opinion)`,0),
+         "L'Humanité" = round(`# articles (L'Humanité)` / `# journalists (L'Humanité)`,0),
+         "Le Monde" = round(`# articles (Le Monde)` / `# journalists (Le Monde)`,0)) %>% 
+  select("gender", `L'Opinion`, `L'Humanité`, `Le Monde`) %>% 
+  kable(caption = "Average number of articles per journalist") %>% 
+  kable_styling(bootstrap_options = "hover", full_width = F, position = "float_right") %>% 
+  column_spec(1:4, width_min = "130px")
+```
+
+<br>
+The reason behind this is <span style="color:#355c5e;">**a difference in the average number of articles per journalist**</span>. At L'Opinion for instance, women write on average twice as many articles as their male counterparts (21 articles for a woman vs 9 for a man). Conversely, women at Le Monde's write slighly fewer articles than men (17 for females vs 19 for males).<br>
+<br>
+<
+<br>span style="color:#355c5e;">**Though, can we conclude that women tend to write more articles than men at L'Opinion?**</span> <br>
+
+<br>
+<br>
+<br>
+
+To answer this question, let's take a more detailed look at the number of articles written by L'Opinion's journalists. <br>
+As you can see in the box plots below, most females and males wrote more or less the same number of articles (~ 1 to 3 articles). The difference in the average thus comes from a small number of female journalists who wrote many more articles than the rest of the authors.<br>
+
+Indeed, the quantiles are pretty much the same for males and females, whereas females have more "high" outliers (for instance, 6 females (out of 53) wrote more than 100 articles, when only 3 males (out of 106) did). The average number of articles per female journalist is thus boosted by these few individuals.<br>
+
+<br>
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df_lopinion %>% 
+  mutate(gender = case_when(gender == "F" ~ "Female",
+                            gender == "M" ~ "Male" )) %>% 
+  plot_ly(y = ~n_articles,
+          color = ~gender, 
+          type = "box",
+          boxpoints = "all") %>% 
+    layout(title = "Distribution of the journalists at L'Opinion,<br>based on the number of articles they wrote",
+           titlefont = list(size = 16),
+           yaxis = list(title = "# of articles"),
+           xaxis = list(title = "Gender"))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df_lopinion %>% 
+  mutate(gender = case_when(gender == "F" ~ "Female",
+                            gender == "M" ~ "Male" )) %>% 
+  plot_ly(y = ~n_articles,  
+          color = ~gender,
+          type = "box",
+          boxpoints = "all") %>% 
+    layout(yaxis = list(title = '# of articles',
+                        autorange = FALSE,
+                        range = c(0,5)),
+           title = "Distribution of the journalists at L'Opinion, based on the number of <br>articles they wrote <b>(hidding outliers)</b>",
+           titlefont = list(size = 16),
+           xaxis = list(title = "Gender"))
+```
+
+<br>
+<span style="color:#355c5e;">**One can thus hardly conclude that, at L'Opinion, women tend to write more articles than men.**</span><br>
+<br>
+<br>
+
+
+## Conclusions
+<br>
+<span style="color:#355c5e;">**What have we learnt?**</span><br>
+
+* **Women are globally less represented than men among Political journalists in two out of the three newspapers we've analyzed**:
+    + Le Monde is the only newspaper with parity among its Political journalists (51% of female journalists). The parity is also (almost) reached when we look at the share of articles written by women (48%).
+    + If 52% of the articles of L'Opinion were written by females, that's because a few women wrote many more articles than men on average. Indeed, women only represent __33of the journalists at l'Opinion.
+    + L'Humanité, as for it, failed both tests. Two third of the articles were written by males, who represent 62% of the authors.<br>
+<br>
+
+* **The reason for that is not a lack of female journalists**.
+    + In 2014, women represented 46% of the journalists in France.
+    + But they only represented 42% of the journalists of generalist and daily newspapers (vs 58% for magazines, and 53% for specialized newspapers).
+    + Thus, women may tend to work for a different kind of newspapers.<br>
+
+_Source: <a href="https://data.metiers-presse.org/chiffres2014/data/afdas_focus_thematique-femmes.pdf" target="_blank">Observation des métiers de la presse</a>_
+<br>
+<br>
+
+<span style="color:#355c5e;">**How could this analysis be improved?**</span><br>
+
+* **We could gather more data ...**
+    + ... analyzing more newspapers
+    + ... scrapping more articles<br>
+<br>
+* **We could analyze other metrics, such as ...**
+    + ... the evolution of the shares over time
+    + ... the same shares, but for other sections of the newspapers (e.g. culture, sports, sciences)
+    + ... the share of the articles in the front page written by women
+    + ... the topics that women vs men dealt with in their Political articles
+
